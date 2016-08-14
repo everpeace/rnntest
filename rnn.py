@@ -1,19 +1,18 @@
 import tensorflow as tf
-from tensorflow.models.rnn import rnn, rnn_cell
 import numpy as np
 import random
 
 
 num_of_input_nodes          = 1
-num_of_hidden_nodes         = 80
+num_of_hidden_nodes         = 1
 num_of_output_nodes         = 1
 length_of_sequences         = 10
-num_of_training_epochs      = 5000
-size_of_mini_batch          = 100
-num_of_prediction_epochs    = 100
+num_of_training_epochs      = 30000
+size_of_mini_batch          = 500
+num_of_prediction_epochs    = 500
 learning_rate               = 0.01
-forget_bias                 = 0.8
-num_of_sample = 1000
+forget_bias                 = 0.7
+num_of_sample = 1000000
 
 
 def get_batch(batch_size, X, t):
@@ -43,15 +42,16 @@ def inference(input_ph, istate_ph):
         bias1_var   = tf.Variable(tf.truncated_normal([num_of_hidden_nodes], stddev=0.1), name="bias1")
         bias2_var   = tf.Variable(tf.truncated_normal([num_of_output_nodes], stddev=0.1), name="bias2")
 
-        in1 = tf.transpose(input_ph, [1, 0, 2]) 
-        in2 = tf.reshape(in1, [-1, num_of_input_nodes]) 
+        in1 = tf.transpose(input_ph, [1, 0, 2])
+        in2 = tf.reshape(in1, [-1, num_of_input_nodes])
         in3 = tf.matmul(in2, weight1_var) + bias1_var
-        in4 = tf.split(0, length_of_sequences, in3)   
+        in4 = tf.split(0, length_of_sequences, in3)
 
-        cell = rnn_cell.BasicLSTMCell(num_of_hidden_nodes, forget_bias=forget_bias)
-        rnn_output, states_op = rnn.rnn(cell, in4, initial_state=istate_ph)
+        cell = tf.nn.rnn_cell.BasicLSTMCell(num_of_hidden_nodes, forget_bias=forget_bias)
+        # cell = tf.nn.rnn_cell.LSTMCell(num_of_hidden_nodes, use_peepholes=True, forget_bias=forget_bias)
+        rnn_output, states_op = tf.nn.rnn(cell, in4, initial_state=istate_ph)
         output_op = tf.matmul(rnn_output[-1], weight2_var) + bias2_var
-        
+
         # Add summary ops to collect data
         w1_hist = tf.histogram_summary("weights1", weight1_var )
         w2_hist = tf.histogram_summary("weights2", weight2_var )
@@ -72,7 +72,7 @@ def training(loss_op):
     with tf.name_scope("training") as scope:
         training_op = optimizer.minimize(loss_op)
         return training_op
-    
+
 def calc_accuracy(output_op, prints=False):
         inputs, ts = make_prediction(num_of_prediction_epochs)
         pred_dict = {
@@ -83,11 +83,11 @@ def calc_accuracy(output_op, prints=False):
         output= sess.run([output_op], feed_dict=pred_dict)
 
         def print_result (i, p, q):
-            print [list(x)[0] for x in i]
-            print("output: %f, correct: %d" % (p , q)) 
+            print([list(x)[0] for x in i])
+            print("output: %f, correct: %d,  accurate: %s" % (p , q, abs(p-q) < 0.05))
         if prints:
             [print_result(i, p, q)  for i, p, q in zip(inputs, output[0], ts)]
-        
+
         opt = abs(output - ts)[0]
         total = sum([1 if x[0] < 0.05 else 0 for x in opt])
         print("accuracy %f" % (total/float(len(ts))))
@@ -97,7 +97,8 @@ random.seed(0)
 np.random.seed(0)
 tf.set_random_seed(0)
 
-optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
+# optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
+optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
 
 X, t = create_data(num_of_sample, length_of_sequences)
 
@@ -127,11 +128,11 @@ with tf.Graph().as_default():
             }
             sess.run(training_op, feed_dict=train_dict)
 
-            if (epoch ) % 100 == 0:
+            if (epoch ) % 200 == 0:
                 summary_str, train_loss = sess.run([summary_op, loss_op], feed_dict=train_dict)
                 print("train#%d, train loss: %e" % (epoch, train_loss))
                 summary_writer.add_summary(summary_str, epoch)
-                if (epoch ) % 500 == 0:
+                if (epoch ) % 1000 == 0:
                     calc_accuracy(output_op)
 
         calc_accuracy(output_op, prints=True)
